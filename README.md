@@ -47,6 +47,23 @@ uvicorn main:app --reload
 
 서버 실행 후 http://127.0.0.1:8000/docs 에서 API를 확인할 수 있습니다.
 
+## API
+
+| Method | Endpoint | 설명 |
+|---|---|---|
+| POST | `/schedules` | 일정 추가 |
+| GET | `/schedules` | 일정 목록 조회 (날짜순) |
+
+일정 추가 요청 예시:
+
+```json
+{
+  "title": "PT",
+  "scheduled_date": "2026-10-29",
+  "scheduled_time": "14:00"
+}
+```
+
 ## 환경 변수
 
 API 키는 저장소에 올리지 않고 `backend/.env` 파일에서 관리합니다. `.env.example`을 복사해 실제 값을 입력하세요.
@@ -59,7 +76,8 @@ cp .env.example .env
 
 - [x] FastAPI 서버 기본 세팅
 - [x] 일정(Schedule) 모델 설계 및 SQLite 연결
-- [ ] 일정 추가 / 조회 / 수정 / 삭제 API
+- [x] 일정 추가 / 조회 API
+- [ ] 일정 수정 / 삭제 API
 - [ ] React 일정 목록 및 입력 화면
 - [ ] 자연어 입력을 AI로 해석해 일정으로 변환
 - [ ] 매일 아침 일정 알림
@@ -75,3 +93,9 @@ cp .env.example .env
 
 **모델 필드 이름을 `date`, `time`으로 지으면 생기는 충돌**
 파이썬의 `date`, `time` 타입과 필드 이름이 겹치면 타입을 인식하지 못하는 문제가 생길 수 있어, `scheduled_date`, `scheduled_time`으로 이름을 구분했습니다.
+
+**입력용 모델(`ScheduleCreate`)을 따로 둔 이유**
+SQLModel의 테이블 모델(`table=True`)은 입력 데이터를 검증하지 않아, `"2026-10-29"` 같은 문자열이 날짜로 변환되지 않습니다. 입력용 모델을 분리해 검증과 타입 변환을 거치도록 하고, `id`, `is_done`, `created_at`처럼 서버가 정해야 할 값은 사용자가 보낼 수 없도록 했습니다.
+
+**시간대 정보 없는 datetime 저장 에러**
+`datetime.now()`로 만든 생성 시각에 시간대 정보가 없어 저장이 거부되었습니다. `datetime.now(timezone.utc)`로 UTC 기준 시각을 저장하도록 수정했습니다. 배포 서버는 보통 UTC 기준으로 동작하기 때문에, 저장은 UTC로 통일하고 표시나 알림 시점에 한국 시간으로 변환하는 방식으로 알림 시각이 어긋나는 문제를 미리 방지했습니다.
