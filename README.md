@@ -53,6 +53,8 @@ uvicorn main:app --reload
 |---|---|---|
 | POST | `/schedules` | 일정 추가 |
 | GET | `/schedules` | 일정 목록 조회 (날짜순) |
+| PATCH | `/schedules/{schedule_id}` | 일정 일부 수정 (완료 체크 포함) |
+| DELETE | `/schedules/{schedule_id}` | 일정 삭제 |
 
 일정 추가 요청 예시:
 
@@ -77,7 +79,7 @@ cp .env.example .env
 - [x] FastAPI 서버 기본 세팅
 - [x] 일정(Schedule) 모델 설계 및 SQLite 연결
 - [x] 일정 추가 / 조회 API
-- [ ] 일정 수정 / 삭제 API
+- [x] 일정 수정 / 삭제 API
 - [ ] React 일정 목록 및 입력 화면
 - [ ] 자연어 입력을 AI로 해석해 일정으로 변환
 - [ ] 매일 아침 일정 알림
@@ -99,3 +101,6 @@ SQLModel의 테이블 모델(`table=True`)은 입력 데이터를 검증하지 �
 
 **시간대 정보 없는 datetime 저장 에러**
 `datetime.now()`로 만든 생성 시각에 시간대 정보가 없어 저장이 거부되었습니다. `datetime.now(timezone.utc)`로 UTC 기준 시각을 저장하도록 수정했습니다. 배포 서버는 보통 UTC 기준으로 동작하기 때문에, 저장은 UTC로 통일하고 표시나 알림 시점에 한국 시간으로 변환하는 방식으로 알림 시각이 어긋나는 문제를 미리 방지했습니다.
+
+**일정 수정을 PUT이 아닌 PATCH로 설계**
+완료 체크처럼 일부 값만 바꾸는 경우가 많아 PATCH를 사용했습니다. `model_dump(exclude_unset=True)`로 사용자가 실제로 보낸 값만 반영해, 보내지 않은 필드가 빈 값으로 덮어써지는 문제를 막았습니다. 존재하지 않는 일정을 수정하거나 삭제하면 404를 반환하도록 예외 처리도 추가했습니다.
