@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 from datetime import date, time, datetime, timezone
 from fastapi import FastAPI, Depends, HTTPException
 from sqlmodel import SQLModel, Field, Session, create_engine, select
+from fastapi.middleware.cors import CORSMiddleware
 
 class Schedule(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
@@ -35,6 +36,12 @@ async def lifespan(app: FastAPI):
     yield
 
 app = FastAPI(lifespan=lifespan)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 @app.get("/")
 def read_root():
