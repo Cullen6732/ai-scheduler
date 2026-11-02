@@ -45,6 +45,7 @@ function App() {
       setError("일정을 추가하지 못했어요");
       return;
     }
+    e.target.reset();
     setTitle("");
     setDate("");
     setTime("");
@@ -72,11 +73,7 @@ function App() {
           value={date}
           onChange={(e) => setDate(e.target.value)}
         />
-        <input
-          type="time"
-          value={time}
-          onchange={(e) => setTime(e.target.value)}
-        />
+        <input type="time" onChange={(e) => setTime(e.target.value)} />
         <button type="submit">추가</button>
       </form>
 
