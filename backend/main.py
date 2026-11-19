@@ -4,6 +4,10 @@ from datetime import date, time, datetime, timezone
 from fastapi import FastAPI, Depends, HTTPException
 from sqlmodel import SQLModel, Field, Session, create_engine, select
 from fastapi.middleware.cors import CORSMiddleware
+import json
+from zoneinfo import ZoneInfo
+import anthropic
+from dotenv import load_dotenv
 
 class Schedule(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
@@ -25,6 +29,20 @@ class ScheduleUpdate(SQLModel):
     is_done : bool | None = None
 
 engine = create_engine("sqlite:///schedules.db")
+
+load_dotenv()
+client = anthropic.Anthropic()
+KST = ZoneInfo("Asia/seoul")
+
+SYSTEM_PROMPT = """너는 일정 입력을 해석하는 도우미야. 사용자가 일정을 말하면 아래 형식의 JSON 하나만 출력해. 설명이나 코드 블록 표시는 절때 붙이지 .
+{"title": "할 일", "scheduled_date": "YYYY-MM-DD", "schedule_time: "HH:MM" 또는 null}
+- 날짜는 아래에 알려주는 오늘 날짜를 기준으로 계산해.
+- 시간이 없으면 scheuled_time은 null로 해.
+- 시간은 오후 2시면 14:00처럼 24시간 형식으로 써."""
+
+class ParseRequest(SQLModel):
+    text: str
+
 
 def get_session():
     with Session(engine) as session:
@@ -80,3 +98,23 @@ def delete_schedule(schedule_id: int, session: Session = Depends(get_session)):
     session.delete(schedule)
     session.commit()
     return {"ok":True}
+
+@app.post("/schedules/parse")
+def parse_schedule(req: ParseRequest):
+    today = datetime.now(KST)
+    weekday = "월화수목금토일"[today.weekday()]
+    message = client.messages.create(
+        model="claude-haiku-5-5",
+        max_tokens=1000,
+        system=SYSTEM_PROMPT + f"\n오늘은 {today:%Y-%m-%d} {weekday}요일이야.",
+        messages=[{"role": "user", "content": req.text}],
+    )
+    texts = [block.text for block in message.content if block.type =="text"]
+    if not texts:
+        raise HTTPException(status_code=502, detail="AI가 답을 주지 않았어요")
+    raw = texts[0].strip()
+    raw = raw.removeprefix("```json").removeprefix("```"). removesuffix("```").strip()
+    try:
+        return ScheduleCreate.model_validate(json.loads(raw))
+    except (json.JSONDecodeError, ValueError):
+        raise HTTPException(status_code=422, detail=f"AI 응답을 해하 못했어:{raw}")
