@@ -59,8 +59,8 @@ function App() {
       setDate(data.scheduled_date);
       setTime(parsedTime);
       if (timeRef.current) timeRef.current.value = parsedTime;
-      setAIfilled(true);
-      setNltext("");
+      setAiFilled(true);
+      setNlText("");
     } catch (err) {
       setError(err.message);
     } finally {
@@ -109,8 +109,34 @@ function App() {
           onChange={(e) => setNlText(e.target.value)}
         />
         <button type="submit" disabled={parsing}>
-          {parsing ? "해석 중..." : "AI로 추가"}
+          {parsing ? "해석 중..." : "AI로 채우기"}
         </button>
+      </form>
+
+      {aiFilled && (
+        <p>
+          AI가 아래 칸을 채웠어요. 확인하고 틀린 부분은 고친 뒤 추가를
+          눌러주세요.
+        </p>
+      )}
+
+      <form onSubmit={handleSubmit}>
+        <input
+          placeholder="할 일"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+        />
+        <imput
+          type="date"
+          value={date}
+          onChange={(e) => setDate(e.target.value)}
+        />
+        <input
+          type="time"
+          ref={timeRef}
+          onChange={(e) => setTime(e.target.value)}
+        />
+        <button type="submit">추가</button>
       </form>
 
       {error && <p>{error}</p>}
