@@ -56,7 +56,8 @@ SUGGEST_PROMPT = """
 {"scheduled_date": "YYYY-MM-DD", "scheduled_time": "HH:MM" 또는 null, "reason": "이유"}
 - 반드시 지금 시각 이후로만 제안해.
 - 이미 있는 일정과 같은 시간은 피해.
-- reason은 사용자에게 바로 보여줄 말투로, 왜 그 시간인지 한두 문장으로 써."""
+- reason은 사용자에게 바로 보여줄 말투로, 왜 그 시간인지 한두 문장으로 써.
+- 날짜와 시간은 scheduled_date와 scheduled_time에만 넣고, title에는 할 일 이름만 써. 예: "내일 오후 2시 PT"의 title은 "PT"."""
 
 def call_ai_json(system_prompt:str, user_text:str) -> dict:
     message = client.messages.create(

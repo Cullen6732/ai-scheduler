@@ -122,7 +122,7 @@ function App() {
 
       <form onSubmit={handleSubmit}>
         <input
-          placeholder="할 일"
+          placeholder="할 일 이름만(예: PT)"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
         />
