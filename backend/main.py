@@ -1,6 +1,6 @@
 from __future__ import annotations
 from contextlib import asynccontextmanager
-from datetime import date, time, datetime, timezone
+from datetime import date, time, datetime, timezone, timedelta
 from fastapi import FastAPI, Depends, HTTPException
 from sqlmodel import SQLModel, Field, Session, create_engine, select
 from fastapi.middleware.cors import CORSMiddleware
@@ -43,6 +43,37 @@ SYSTEM_PROMPT = """너는 일정 입력을 해석하는 도우미야. 사용자�
 class ParseRequest(SQLModel):
     text: str
 
+class Suggestion(SQLModel):
+    scheduled_date: date
+    scheduled_time: time | None = None
+    reason: str
+
+SUGGEST_PROMPT = """
+너는 미룬 일정을 다시 잡아주는 도우미야.
+사용자가 완료하지 못한 일정과 앞으로 일주일의 일정 목록을 줄 거야.
+겹치지 않고 현실적으로 할 수 있는 새 날짜와 시간을 하나 제안해.
+아래의 형식의 JSON 하나만 출력해. 설명이나 코드 블록 표시는 절대 붙이지 마.
+{"scheduled_date": "YYYY-MM-DD", "scheduled_time": "HH:MM" 또는 null, "reason": "이유"}
+- 반드시 지금 시각 이후로만 제안해.
+- 이미 있는 일정과 같은 시간은 피해.
+- reason은 사용자에게 바로 보여줄 말투로, 왜 그 시간인지 한두 문장으로 써."""
+
+def call_ai_json(system_prompt:str, user_text:str) -> dict:
+    message = client.messages.create(
+        model="claude-haiku-5-5",
+        max_tokens=1000,
+        system=system_prompt,
+        messages=[{"role": "user", "content": user_text}],
+    )
+    texts= [block.text for block in message.content if block.type == "text"]
+    if not texts:
+        raise HTTPException(status_code=502, detail="AI가 답을 주지 않았어요")
+    raw = texts[0].strip()
+    raw = raw.removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=422, detail=f"AI 응답을 해석하지 못했어요: {raw}")
 
 def get_session():
     with Session(engine) as session:
@@ -111,10 +142,75 @@ def parse_schedule(req: ParseRequest):
     )
     texts = [block.text for block in message.content if block.type =="text"]
     if not texts:
-        raise HTTPException(status_code=502, detail="AI가 답을 주지 않았어요")
+        raise HTTPException(status_code=502, detail="AI가 답을 주지 않았습니다")
     raw = texts[0].strip()
     raw = raw.removeprefix("```json").removeprefix("```"). removesuffix("```").strip()
     try:
         return ScheduleCreate.model_validate(json.loads(raw))
     except (json.JSONDecodeError, ValueError):
-        raise HTTPException(status_code=422, detail=f"AI 응답을 해하 못했어:{raw}")
+        raise HTTPException(status_code=422, detail=f"AI 응답을 해석하지 못했어:{raw}")
+
+@app.get("/schedules/overdue")
+def read_overdue(session: Session = Depends(get_session)):
+    today = datetime.now(KST).date()
+    statement = (
+        select(Schedule)
+        .where(Schedule.scheduled_date < today, Schedule.is_done == False) # noqa: E712
+        .order_by(Schedule.scheduled_date)
+    )
+    return session.exec(statement).all()
+
+@app.post("/schedules/{schedule_id}/suggest")
+def suggest_reschedule(schedule_id: int, session: Session = Depends(get_session)):
+    target = session.get(Schedule, schedule_id)
+    if not target:
+        raise HTTPException(status_code= 404, detail="일정을 찾을 수 없습니다")
+
+    now = datetime.now(KST)
+    today = now.date()
+    statement = (
+        select(Schedule)
+        .where(
+            Schedule.scheduled_date >= today,
+            Schedule.scheduled_date <= today + timedelta(days=7),
+            Schedule.id != schedule_id,
+        )
+        .order_by(Schedule.scheduled_date, Schedule.scheduled_time)
+    )
+    upcoming = session.exec(statement).all()
+
+    def describe(s: Schedule) -> str:
+        t = s.scheduled_time.strftime("%H:%M") if s.scheduled_time else "시간 없음"
+        return f"- {s.scheduled_date} {t} {s.title}"
+
+    lines = [describe(s) for s in upcoming] or ["- (일정 없음)"]
+    weekday = "월화수목금토일"[today.weekday()]
+    user_text = (
+        f"지금은 {now:%Y-%m-%d %H:%M} {weekday}요일이야. \n"
+        f"미룬 일정: {describe(target)[2:]}\n"
+        f"앞으로 일주일 일정: \n" + "\n".join(lines)
+    )
+
+    data =call_ai_json(SUGGEST_PROMPT, user_text)
+    try:
+        suggestion = Suggestion.model_validate(data)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=f"AI 제안 형식이 올바르지 않습니다: {e}")
+
+    if suggestion.scheduled_date < today or (
+        suggestion.scheduled_date == today
+        and suggestion.scheduled_time
+        and suggestion.scheduled_time <= now.time()
+    ):
+        raise HTTPException(status_code=422, detail="AI가 지난 시간을 제안했어요. 다시 시도해주세")
+
+    for s in upcoming:
+        if (
+            s.scheduled_date == suggestion.scheduled_date
+            and s.scheduled_time
+            and suggestion.scheduled_time
+            and s.scheduled_time.replace(second=0, microsecond=0) == suggestion.scheduled_time
+            ):
+            raise HTTPException(statuscode=409, detail=f"AI 제안이 '{s.title}' 일정과 겹칩니다. 다시 시도해주세요")
+
+        return suggestion
