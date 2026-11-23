@@ -25,6 +25,9 @@ function App() {
   const [parsing, setParsing] = useState(false);
   const [aiFilled, setAiFilled] = useState(false);
   const timeRef = useRef(null);
+  const [overdue, setOverdue] = useState([]);
+  const [suggestions, setSuggestions] = useState({});
+  const [suggestingId, setSuggestingId] = useState(null);
 
   async function loadSchedules() {
     try {
@@ -37,8 +40,65 @@ function App() {
     }
   }
 
+  async function loadOverdue() {
+    const res = await fetch(`${API_URL}/schedules/overdue`);
+    const data = await res.json();
+    setOverdue(data);
+  }
+
+  async function getSuggestion(id) {
+    setSuggestingId(id);
+    try {
+      const res = await fetch(`${API_URL}/schedules/${id}/suggest`, {
+        method: "POST",
+      });
+      const data = await res.json();
+      console.log("제안 응답", data);
+      if (!res.ok) {
+        const message =
+          typeof data.detail === "string"
+            ? data.detail
+            : "제안을 받지 못했어요";
+        setSuggestions((prev) => ({ ...prev, [id]: { error: message } }));
+        return;
+      }
+      setSuggestions((prev) => ({ ...prev, [id]: data }));
+    } catch (e) {
+      setSuggestions((prev) => ({
+        ...prev,
+        [id]: { error: "서버에 연결하지 못했어요" },
+      }));
+    } finally {
+      setSuggestingId(null);
+    }
+  }
+
+  async function acceptSuggestion(id) {
+    const suggestion = suggestions[id];
+    const res = await fetch(`${API_URL}/schedules/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        scheduled_date: suggestion.scheduled_date,
+        scheduled_time: suggestion.scheduled_time,
+      }),
+    });
+    if (!res.ok) {
+      setError("일정을 옮기지 못했어요");
+      return;
+    }
+    setSuggestions((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+    loadSchedules();
+    loadOverdue();
+  }
+
   useEffect(() => {
     loadSchedules();
+    loadOverdue();
   }, []);
 
   async function handleParse(e) {
@@ -93,10 +153,25 @@ function App() {
     loadSchedules();
   }
 
+  async function toggleDone(s) {
+    const res = await fetch(`${API_URL}/schedules/${s.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ is_done: !s.is_done }),
+    });
+    if (!res.ok) {
+      setError("상태를 바꾸지 못했어요");
+      return;
+    }
+    loadSchedules();
+    loadOverdue();
+  }
+
   async function deleteSchedule(id) {
     if (!window.confirm("이 일정을 삭제할까요?")) return;
     await fetch(`${API_URL}/schedules/${id}`, { method: "DELETE" });
     loadSchedules();
+    loadOverdue();
   }
 
   return (
@@ -126,7 +201,7 @@ function App() {
           value={title}
           onChange={(e) => setTitle(e.target.value)}
         />
-        <imput
+        <input
           type="date"
           value={date}
           onChange={(e) => setDate(e.target.value)}
@@ -138,6 +213,34 @@ function App() {
         />
         <button type="submit">추가</button>
       </form>
+
+      {overdue.length > 0 && (
+        <section>
+          <h2>미룬 일정 {overdue.length}개</h2>
+          <ul>
+            {overdue.map((s) => (
+              <li key={s.id}>
+                {s.title} ({s.scheduled_date} {formatTime(s.scheduled_time)})
+                <button
+                  onClick={() => getSuggestion(s.id)}
+                  disabled={suggestingId === s.id}
+                >
+                  {suggestingId === s.id ? "생각 중..." : "제안 받기"}
+                </button>
+                {suggestions[s.id]?.error && <p>{suggestions[s.id].error}</p>}
+                {suggestions[s.id]?.scheduled_date && (
+                  <p>
+                    제안: {suggestions[s.id].scheduled_date}{" "}
+                    {formatTime(suggestions[s.id].scheduled_time)} ·{" "}
+                    {suggestions[s.id].reason}
+                    <button onClick={() => acceptSuggestion(s.id)}>수락</button>
+                  </p>
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {error && <p>{error}</p>}
 

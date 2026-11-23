@@ -214,4 +214,4 @@ def suggest_reschedule(schedule_id: int, session: Session = Depends(get_session)
             ):
             raise HTTPException(statuscode=409, detail=f"AI 제안이 '{s.title}' 일정과 겹칩니다. 다시 시도해주세요")
 
-        return suggestion
+    return suggestion
