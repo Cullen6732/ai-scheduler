@@ -28,6 +28,7 @@ function App() {
   const [overdue, setOverdue] = useState([]);
   const [suggestions, setSuggestions] = useState({});
   const [suggestingId, setSuggestingId] = useState(null);
+  const [stats, setStats] = useState(null);
 
   async function loadSchedules() {
     try {
@@ -42,8 +43,22 @@ function App() {
 
   async function loadOverdue() {
     const res = await fetch(`${API_URL}/schedules/overdue`);
+    if (!res.ok) return;
     const data = await res.json();
     setOverdue(data);
+  }
+
+  async function loadStats() {
+    const res = await fetch(`${API_URL}/stats/weekly`);
+    if (!res.ok) return;
+    const data = await res.json();
+    setStats(data);
+  }
+
+  function refreshAll() {
+    loadSchedules();
+    loadOverdue();
+    loadStats();
   }
 
   async function getSuggestion(id) {
@@ -92,13 +107,11 @@ function App() {
       delete next[id];
       return next;
     });
-    loadSchedules();
-    loadOverdue();
+    refreshAll();
   }
 
   useEffect(() => {
-    loadSchedules();
-    loadOverdue();
+    refreshAll();
   }, []);
 
   async function handleParse(e) {
@@ -150,7 +163,7 @@ function App() {
     setDate(getToday());
     setAiFilled(false);
     setTime("");
-    loadSchedules();
+    refreshAll();
   }
 
   async function toggleDone(s) {
@@ -163,20 +176,23 @@ function App() {
       setError("상태를 바꾸지 못했어요");
       return;
     }
-    loadSchedules();
-    loadOverdue();
+    refreshAll();
   }
 
   async function deleteSchedule(id) {
     if (!window.confirm("이 일정을 삭제할까요?")) return;
     await fetch(`${API_URL}/schedules/${id}`, { method: "DELETE" });
-    loadSchedules();
-    loadOverdue();
+    refreshAll();
   }
 
   return (
     <main>
       <h1>AI 스케줄러</h1>
+      {stats && (
+        <p>
+          이번 주 달성률 {stats.rate}% ({stats.done}/{stats.total})
+        </p>
+      )}
       <form onSubmit={handleParse}>
         <input
           placeholder="예: 내일 오후 2시 PT"

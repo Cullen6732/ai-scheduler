@@ -161,6 +161,22 @@ def read_overdue(session: Session = Depends(get_session)):
     )
     return session.exec(statement).all()
 
+@app.get("/stats/weekly")
+def weekly_stats(session: Session = Depends(get_session)):
+    today = datetime.now(KST).date()
+    start = today - timedelta(days=today.weekday())
+    end = start + timedelta(days=6)
+    statement = select(Schedule).where(
+        Schedule.scheduled_date >= start,
+        Schedule.scheduled_date <= end,
+    )
+    schedules = session.exec(statement).all()
+
+    total = len(schedules)
+    done = len([s for s in schedules if s.is_done])
+    rate = round(done / total * 100) if total > 0 else 0
+    return {"start":start, "end":end, "total":total, "done":done, "rate":rate}
+
 @app.post("/schedules/{schedule_id}/suggest")
 def suggest_reschedule(schedule_id: int, session: Session = Depends(get_session)):
     target = session.get(Schedule, schedule_id)
